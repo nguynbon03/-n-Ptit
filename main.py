@@ -48,12 +48,21 @@ def frontend():
     return FileResponse(_ASSET_DIR / "index.html")
 
 
-@app.get("/static/{asset_path:path}", include_in_schema=False)
-def static_asset(asset_path: str):
-    asset = (_STATIC_DIR / asset_path).resolve()
-    if _STATIC_DIR not in asset.parents or not asset.is_file():
+def _serve_asset(asset_root: Path, asset_path: str):
+    asset = (asset_root / asset_path).resolve()
+    if asset_root not in asset.parents or not asset.is_file():
         raise HTTPException(status_code=404, detail="Asset not found")
     return FileResponse(asset)
+
+
+@app.get("/assets/{asset_path:path}", include_in_schema=False)
+def frontend_asset(asset_path: str):
+    return _serve_asset(_FRONTEND_DIR, "assets/" + asset_path)
+
+
+@app.get("/static/{asset_path:path}", include_in_schema=False)
+def static_asset(asset_path: str):
+    return _serve_asset(_STATIC_DIR, asset_path)
 
 
 # ---------------------------------------------------------------------------
