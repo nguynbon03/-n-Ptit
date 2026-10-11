@@ -1,7 +1,13 @@
 {
   "version": 2,
-  "buildCommand": "npm install --no-audit --no-fund && npm run build",
-  "outputDirectory": "dist",
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": { "distDir": "dist" }
+    },
+    { "src": "api/index.py", "use": "@vercel/python" }
+  ],
   "routes": [
     { "src": "/api/(.*)", "dest": "/api/index.py" },
     { "handle": "filesystem" },
