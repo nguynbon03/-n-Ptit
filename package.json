@@ -1,0 +1,7 @@
+{
+  "name": "do-an-ptit",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix frontend install --no-audit --no-fund && npm --prefix frontend run build"
+  }
+}

@@ -39,8 +39,9 @@ class ApiPrefixMiddleware:
 app.add_middleware(ApiPrefixMiddleware)
 
 _STATIC_DIR = Path(__file__).parent / "static"
-_FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
-_ASSET_DIR = _FRONTEND_DIR if _FRONTEND_DIR.is_dir() else _STATIC_DIR
+_FRONTEND_DIR = Path(__file__).parent / "dist"
+_LEGACY_FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
+_ASSET_DIR = next((path for path in (_FRONTEND_DIR, _LEGACY_FRONTEND_DIR, _STATIC_DIR) if path.is_dir()), _STATIC_DIR)
 
 
 @app.get("/", include_in_schema=False)
@@ -57,7 +58,7 @@ def _serve_asset(asset_root: Path, asset_path: str):
 
 @app.get("/assets/{asset_path:path}", include_in_schema=False)
 def frontend_asset(asset_path: str):
-    return _serve_asset(_FRONTEND_DIR, "assets/" + asset_path)
+    return _serve_asset(_ASSET_DIR, "assets/" + asset_path)
 
 
 @app.get("/static/{asset_path:path}", include_in_schema=False)
