@@ -1,0 +1,70 @@
+{
+  "schema": "agentopen-routing/v1",
+  "repository": {
+    "root": "/Users/nguynbon03/Desktop/Đồ Án Ptit",
+    "fingerprint": "FastAPI Python backend + React/Vite/TypeScript frontend; current SQLite prototype; target PostgreSQL SQLArena contracts in /Users/nguynbon03/Downloads/Design",
+    "git_branch": "HEAD",
+    "working_tree": "clean at intake"
+  },
+  "ecosystem": "generic; native target is PostgreSQL-backed FastAPI service with React/Vite frontend and external durable worker",
+  "stack": {
+    "backend": "Python FastAPI",
+    "frontend": "React + Vite + TypeScript",
+    "database": "PostgreSQL",
+    "queue": "PostgreSQL durable jobs with SKIP LOCKED and leased workers",
+    "package_managers": ["pip", "npm"],
+    "test_runners": ["pytest", "frontend build/typecheck; browser/API contract tests to add"],
+    "deployment": "Vercel for static frontend and bounded API only; separate PostgreSQL-backed service and worker for production"
+  },
+  "native_ecosystem": "generic; no .planning/ or process/ detected; GitNexus index not established",
+  "research": {
+    "tier": 1,
+    "deep_research": false,
+    "evidence": [
+      "/Users/nguynbon03/Downloads/Design/api/openapi.yaml",
+      "/Users/nguynbon03/Downloads/Design/db/postgres_schema.sql",
+      "/Users/nguynbon03/Downloads/Design/docs/business_rules.md",
+      "/Users/nguynbon03/Downloads/Design/docs/implementation_contracts.md",
+      "/Users/nguynbon03/Downloads/Design/docs/screens.md",
+      "/Users/nguynbon03/Downloads/Design/docs/test_plan.md",
+      "/Users/nguynbon03/Desktop/Đồ Án Ptit/plan.md",
+      "provided backend and frontend audits"
+    ]
+  },
+  "selected": {
+    "profiles": [
+      {"name": "dev-analys", "reason": "requirements synthesis, routing, plan gate"},
+      {"name": "dev-sa", "reason": "target architecture and contract boundaries"},
+      {"name": "dev-be", "reason": "FastAPI, PostgreSQL, auth, worker, grading, import"},
+      {"name": "dev-fe", "reason": "React routes, learner/admin flows, trust-boundary UI"},
+      {"name": "devops", "reason": "Vercel boundary, containers, migration and rollback operations"},
+      {"name": "dev-orchestration", "reason": "multi-wave disjoint implementation scopes after approval"}
+    ],
+    "agents": [
+      {"name": "dev-be-worker", "reason": "backend/data tasks"},
+      {"name": "dev-fe-worker", "reason": "frontend tasks"},
+      {"name": "devops-worker", "reason": "deployment/configuration tasks"},
+      {"name": "dev-orchestration-agent", "reason": "approved multi-domain execution and integration"}
+    ],
+    "skills": [
+      {"name": "superpowers-writing-plans", "reason": "implementation-ready WBS and handoff"},
+      {"name": "sd-system-design", "reason": "architecture, boundaries, trade-offs"},
+      {"name": "vc-test-coverage-plan", "reason": "high-risk auth/data/API/deploy test gates"},
+      {"name": "claude-api", "reason": "Anthropic provider contract and secret-safe integration"},
+      {"name": "superpowers-verification-before-completion", "reason": "final evidence gate"}
+    ]
+  },
+  "routes": [
+    {"task": "architecture-contract", "profile": "dev-sa", "agent": "dev-be-worker", "primary_skill": "sd-system-design", "wave": 0},
+    {"task": "backend-platform", "profile": "dev-be", "agent": "dev-be-worker", "primary_skill": "superpowers-writing-plans", "wave": 1},
+    {"task": "frontend-platform", "profile": "dev-fe", "agent": "dev-fe-worker", "primary_skill": "superpowers-writing-plans", "wave": 1},
+    {"task": "deployment", "profile": "devops", "agent": "devops-worker", "primary_skill": "superpowers-writing-plans", "wave": 1},
+    {"task": "integration", "profile": "dev-orchestration", "agent": "dev-orchestration-agent", "primary_skill": "superpowers-verification-before-completion", "wave": 2}
+  ],
+  "plan": {
+    "path": "/Users/nguynbon03/Desktop/Đồ Án Ptit/plan.md",
+    "status": "APPROVED existing plan; proposed broader DRAFT revision appended for explicit user decision",
+    "implementation_allowed": false,
+    "reason": "Current approved plan is narrower than requested SQLArena target; do not downgrade or silently replace approved intent"
+  }
+}

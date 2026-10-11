@@ -8,3 +8,8 @@ pydantic
 google-generativeai
 aiofiles
 openpyxl
+pymongo
+python-multipart
+passlib[bcrypt]
+PyJWT
+email-validator

@@ -12,7 +12,7 @@ SQLArena is a local-first FastAPI workspace for generating, reviewing, and verif
 - SQL verification with DDL, seed data, answer query, row count, output, and timeout/error reporting.
 - Anthropic-compatible HTTP provider by default; Gemini and NVIDIA remain supported when configured.
 
-The larger design package describes authentication, PostgreSQL, learner submissions, weekly sets, admin RBAC, and worker infrastructure. Those contracts are not implemented in this checkout and are not claimed here.
+This checkout now includes bounded MongoDB-backed registration/login/profile auth, learner/admin role checks, and safe learner question projections. Refresh-token rotation, PostgreSQL persistence, learner submissions, weekly sets, and durable worker infrastructure remain outside this prototype slice.
 
 ## Local setup
 
@@ -55,7 +55,7 @@ NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1/chat/completions
 NVIDIA_MODEL=google/gemma-4-31b-it
 ```
 
-Generation requires a configured provider credential. Health, question browsing, stats, and SQL verification do not call an LLM.
+Generation requires a configured provider credential. Health and auth do not call an LLM. Question browsing, stats, generation, and SQL verification require the appropriate authenticated role.
 
 ## API examples
 

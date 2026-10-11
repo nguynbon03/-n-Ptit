@@ -3,29 +3,81 @@ import type { FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-type Question = { id: string; question_text?: string; difficulty?: string; topic?: string; status?: string; valid?: boolean; schema_sql?: string; seed_sql?: string; answer_sql?: string };
-type Stats = { total?: number; valid_rate?: number; by_status?: Record<string, number> };
-const api = async <T,>(path: string, options?: RequestInit): Promise<T> => { const r = await fetch(`/api${path}`, { headers: { "Content-Type": "application/json" }, ...options }); const data = await r.json().catch(() => ({})); if (!r.ok) throw new Error(data.detail || `Request failed (${r.status})`); return data; };
-const esc = (value: unknown) => String(value ?? "");
+type User = { id: string; email: string; role: "learner" | "admin"; status: string };
+type Question = { id: string; question_text?: string; difficulty?: string; topic?: string; status?: string; answer_sql?: string; schema_sql?: string };
+type Stats = { users?: number; questions?: number; approved_questions?: number; pending_questions?: number; documents?: number; jobs?: number };
+type Weekly = { challenge: { title?: string; number?: number; status?: string }; progress: { done: number; total: number; percent: number }; questions: Question[] };
+
+const savedToken = localStorage.getItem("sqlarena_token") || "";
+const api = async <T,>(path: string, token: string, options: RequestInit = {}): Promise<T> => {
+  const headers = new Headers(options.headers);
+  if (!(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const res = await fetch(`/api${path}`, { ...options, headers });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || `Request failed (${res.status})`);
+  return data;
+};
 
 function App() {
-  const [health, setHealth] = useState("Đang kiểm tra"); const [stats, setStats] = useState<Stats>({}); const [questions, setQuestions] = useState<Question[]>([]); const [selected, setSelected] = useState<Question | null>(null); const [tab, setTab] = useState("workspace"); const [notice, setNotice] = useState(""); const [difficulty, setDifficulty] = useState(""); const [status, setStatus] = useState(""); const [busy, setBusy] = useState(false); const [sqlResult, setSqlResult] = useState("");
-  const refresh = async () => { try { const [s, q, h] = await Promise.all([api<Stats>(`/stats`), api<{ questions: Question[] }>(`/questions?limit=200${difficulty ? `&difficulty=${difficulty}` : ""}${status ? `&status=${status}` : ""}`), api<{ version: string }>(`/health`)]); setStats(s); setQuestions(q.questions || []); setHealth(`Online · v${h.version}`); } catch (e) { setHealth("Offline"); setNotice(e instanceof Error ? e.message : "Không thể kết nối API"); } };
-  useEffect(() => { refresh(); }, [difficulty, status]);
-  const metric = useMemo(() => [{ label: "Câu hỏi", value: stats.total ?? 0 }, { label: "Tỷ lệ hợp lệ", value: `${Math.round((stats.valid_rate || 0) * 100)}%` }, { label: "Chờ duyệt", value: stats.by_status?.pending_review ?? 0 }, { label: "Đã duyệt", value: stats.by_status?.approved ?? 0 }], [stats]);
-  const generate = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); setNotice(""); const form = new FormData(event.currentTarget); const specs = form.getAll("spec").map(String); try { const result = await api<{ task_id?: string }>("/generate", { method: "POST", body: JSON.stringify({ specs, questions_per_spec: Number(form.get("count")), excel_id: form.get("excel") || null }) }); if (result.task_id) { setNotice("Pipeline đang chạy. Đang theo dõi tiến độ…"); for (let i = 0; i < 100; i++) { await new Promise(r => setTimeout(r, 1200)); const task = await api<{ status: string; error?: string }>(`/tasks/${result.task_id}`); if (task.status === "done") break; if (task.status === "failed") throw new Error(task.error || "Pipeline thất bại"); } } else setNotice("Đã sinh câu hỏi."); await refresh(); } catch (e) { setNotice(e instanceof Error ? e.message : "Sinh đề thất bại"); } finally { setBusy(false); } };
-  const verify = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const form = new FormData(event.currentTarget); setSqlResult("Đang chạy kiểm tra…"); try { const result = await api<Record<string, unknown>>("/verify-sql", { method: "POST", body: JSON.stringify({ ddl_sql: form.get("ddl"), seed_sql: form.get("seed"), answer_sql: form.get("answer") }) }); setSqlResult(JSON.stringify(result, null, 2)); } catch (e) { setSqlResult(e instanceof Error ? e.message : "Kiểm tra thất bại"); } };
-  const updateStatus = async (q: Question, next: string) => { try { await api(`/questions/${q.id}/status`, { method: "PUT", body: JSON.stringify({ status: next, review_notes: "Updated in SQLArena React workspace" }) }); setNotice("Đã cập nhật trạng thái."); await refresh(); setSelected(null); } catch (e) { setNotice(e instanceof Error ? e.message : "Cập nhật thất bại"); } };
-  return <div className="app-shell"><header className="topbar"><a className="brand" href="#top"><span className="brand-mark">S</span><span>SQLArena</span></a><nav aria-label="Điều hướng chính"><button className={tab === "workspace" ? "nav-active" : ""} onClick={() => setTab("workspace")}>Phòng điều hành</button><button className={tab === "practice" ? "nav-active" : ""} onClick={() => setTab("practice")}>Ngân hàng câu hỏi</button><button className={tab === "admin" ? "nav-active" : ""} onClick={() => setTab("admin")}>Kiểm duyệt</button></nav><span className="health" data-online={health.startsWith("Online")}>{health}</span></header><main id="top">
-    <section className="hero"><div><p className="kicker">SQLARENA · WORKBENCH</p><h1>Đề SQL tốt bắt đầu từ pipeline rõ ràng.</h1><p className="hero-copy">Sinh đề, kiểm tra truy vấn và duyệt question bank trong một không gian gọn, có kiểm soát.</p></div><div className="hero-aside"><span className="hero-number">01</span><strong>Local-first</strong><span>Provider và credential chỉ nằm ở backend.</span></div></section>
-    {notice && <div className="notice" role="status">{notice}</div>}
-    <section className="metrics" aria-label="Thống kê">{metric.map(item => <div className="metric" key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}</section>
-    {tab === "workspace" && <div className="main-grid"><section className="panel generation"><PanelTitle index="01" eyebrow="Generation pipeline" title="Sinh bộ câu hỏi"/><form onSubmit={generate}><fieldset><legend>Độ khó</legend><div className="choices">{["easy", "medium", "hard"].map(x => <label className="choice" key={x}><input type="checkbox" name="spec" value={x} defaultChecked /><span>{x}</span></label>)}</div></fieldset><label>Số câu mỗi độ khó<input name="count" type="number" min="1" max="10" defaultValue="1" /></label><label>Excel target <small>tuỳ chọn</small><input name="excel" placeholder="SQL-001" /></label><button className="button primary" disabled={busy}>{busy ? "Pipeline đang chạy…" : "Bắt đầu sinh đề →"}</button></form></section><section className="panel verifier"><PanelTitle index="02" eyebrow="Sandbox check" title="Kiểm tra SQL"/><form onSubmit={verify}><label>DDL schema<textarea name="ddl" rows={3} placeholder="CREATE TABLE users (...);" /></label><label>Seed data<textarea name="seed" rows={3} placeholder="INSERT INTO users VALUES (...);" /></label><label>Answer query<textarea name="answer" rows={3} placeholder="SELECT * FROM users;" /></label><button className="button sage">Chạy kiểm tra ↗</button></form>{sqlResult && <pre className="result">{sqlResult}</pre>}</section></div>}
-    {tab !== "workspace" && <section className="panel"><PanelTitle index={tab === "practice" ? "03" : "04"} eyebrow={tab === "practice" ? "Learner view" : "Admin review"} title={tab === "practice" ? "Ngân hàng câu hỏi" : "Hàng đợi kiểm duyệt"}/><p className="section-note">Màn hình này dùng question bank hiện có. Auth, weekly set và RBAC theo bộ thiết kế cần backend contract riêng trước khi bật production.</p></section>}
-    <section className="panel library"><div className="panel-head"><PanelTitle index="03" eyebrow="Question bank" title="Câu hỏi gần đây"/><div className="filters"><select aria-label="Lọc độ khó" value={difficulty} onChange={e => setDifficulty(e.target.value)}><option value="">Mọi độ khó</option><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select><select aria-label="Lọc trạng thái" value={status} onChange={e => setStatus(e.target.value)}><option value="">Mọi trạng thái</option><option value="pending_review">Chờ duyệt</option><option value="approved">Đã duyệt</option><option value="rejected">Từ chối</option><option value="archived">Lưu trữ</option></select><button className="button small" onClick={refresh}>Làm mới</button></div></div><div className="question-list">{questions.length ? questions.map(q => <article className="question" key={q.id}><div><h3>{esc(q.question_text) || "Câu hỏi chưa có tiêu đề"}</h3><p><span className="tag">{q.difficulty}</span><span className="tag">{q.status}</span>{q.topic || "SQL"}</p></div><button className="button small dark" onClick={() => setSelected(q)}>Xem chi tiết</button></article>) : <p className="empty">Chưa có câu hỏi phù hợp.</p>}</div></section>
-    {selected && <section className="panel detail" aria-labelledby="detail-title"><div className="panel-head"><PanelTitle index="DETAIL" eyebrow="Selected question" title="Chi tiết câu hỏi"/><button className="close" onClick={() => setSelected(null)} aria-label="Đóng">×</button></div><p className="detail-prompt">{selected.question_text}</p><div className="detail-grid"><pre>{selected.schema_sql}</pre><pre>{selected.answer_sql}</pre></div><div className="review-actions"><select aria-label="Trạng thái mới" defaultValue={selected.status === "approved" || selected.status === "rejected" || selected.status === "archived" ? selected.status : "approved"} onChange={e => updateStatus(selected, e.target.value)}><option value="approved">Duyệt</option><option value="rejected">Từ chối</option><option value="archived">Lưu trữ</option></select></div></section>}
-  </main><footer><span>SQLArena · Đồ Án PTIT</span><a href="/docs">API docs</a></footer></div>;
+  const [token, setToken] = useState(savedToken);
+  const [user, setUser] = useState<User | null>(null);
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [notice, setNotice] = useState("");
+  const [tab, setTab] = useState("dashboard");
+  const [stats, setStats] = useState<Stats>({});
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [weekly, setWeekly] = useState<Weekly | null>(null);
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [docs, setDocs] = useState<any[]>([]);
+
+  const authed = async (nextToken = token) => {
+    if (!nextToken) return;
+    try {
+      const me = await api<User>("/me", nextToken);
+      setUser(me);
+      if (me.role === "admin") setTab("admin");
+    } catch {
+      localStorage.removeItem("sqlarena_token");
+      setToken("");
+    }
+  };
+  useEffect(() => { authed(); }, []);
+
+  const load = async () => {
+    if (!token || !user) return;
+    try {
+      const [q, w] = await Promise.all([api<{ questions: Question[] }>("/questions?limit=100", token), api<Weekly>("/weekly/current", token)]);
+      setQuestions(q.questions || []); setWeekly(w);
+      if (user.role === "admin") {
+        const [s, j, d] = await Promise.all([api<Stats>("/admin/stats", token), api<{ jobs: any[] }>("/admin/generation-jobs", token), api<{ documents: any[] }>("/admin/documents", token)]);
+        setStats(s); setJobs(j.jobs || []); setDocs(d.documents || []);
+      }
+    } catch (e) { setNotice(e instanceof Error ? e.message : "Không tải được dữ liệu"); }
+  };
+  useEffect(() => { load(); }, [token, user?.role]);
+
+  const submitAuth = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setNotice("");
+    const form = new FormData(event.currentTarget);
+    try {
+      const data = await api<{ access_token: string; user: User }>(`/auth/${mode}`, "", { method: "POST", body: JSON.stringify({ email: form.get("email"), password: form.get("password") }) });
+      localStorage.setItem("sqlarena_token", data.access_token); setToken(data.access_token); setUser(data.user); setTab(data.user.role === "admin" ? "admin" : "dashboard");
+    } catch (e) { setNotice(e instanceof Error ? e.message : "Đăng nhập thất bại"); }
+  };
+  const logout = () => { localStorage.removeItem("sqlarena_token"); setToken(""); setUser(null); };
+  const uploadDoc = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const body = new FormData(event.currentTarget); await api("/admin/documents", token, { method: "POST", body }); setNotice("Đã nạp tài liệu vào Mongo."); load(); };
+  const generate = async () => { const r = await api<{ task_id: string }>("/admin/generation-jobs", token, { method: "POST", body: JSON.stringify({ specs: ["easy", "medium", "hard"], questions_per_spec: 1 }) }); setNotice(`Đã tạo job ${r.task_id}`); load(); };
+  const approve = async (q: Question, status: string) => { await api(`/questions/${q.id}/status`, token, { method: "PUT", body: JSON.stringify({ status, review_notes: "Updated by admin UI" }) }); load(); };
+
+  if (!user) return <AuthScreen mode={mode} setMode={setMode} submitAuth={submitAuth} notice={notice} />;
+  const nav = user.role === "admin" ? [["admin", "Tổng quan"], ["questions", "Ngân hàng đề"], ["documents", "Tài liệu"], ["jobs", "AI jobs"]] : [["dashboard", "Dashboard"], ["questions", "Câu hỏi"], ["progress", "Tiến độ"]];
+  return <div className="app"><aside className="sidebar"><a className="brand"><span className="brandmark">SQL</span><span>sqlarena<small>{user.role === "admin" ? "ADMIN CONSOLE" : "LEARN BY QUERYING"}</small></span></a><nav>{nav.map(([id, label]) => <button key={id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>{label}</button>)}</nav><div className="profile"><strong>{user.email}</strong><small>{user.role}</small><button onClick={logout}>Đăng xuất</button></div></aside><main className="content"><header className="pagehead"><div><p className="eyebrow">SQLARENA</p><h1>{user.role === "admin" ? "Không gian quản trị." : "Học SQL bằng thử thách."}</h1></div><button className="btn" onClick={load}>Làm mới</button></header>{notice && <div className="notice">{notice}</div>}{user.role === "admin" ? <Admin tab={tab} stats={stats} questions={questions} docs={docs} jobs={jobs} uploadDoc={uploadDoc} generate={generate} approve={approve} /> : <Learner tab={tab} questions={questions} weekly={weekly} />}</main></div>;
 }
-function PanelTitle({ index, eyebrow, title }: { index: string; eyebrow: string; title: string }) { return <div className="panel-title"><div><p className="kicker">{eyebrow}</p><h2>{title}</h2></div><span>{index}</span></div>; }
+
+function AuthScreen({ mode, setMode, submitAuth, notice }: any) { return <div className="auth"><section className="auth-art"><a className="brand"><span className="brandmark">SQL</span><span>sqlarena<small>Learn by querying</small></span></a><h1>Học bằng cách <em>đặt câu hỏi.</em></h1><p>Luyện SQL qua đề được sinh, duyệt và lưu trên MongoDB.</p><pre>SELECT skill, progress FROM learners ORDER BY progress DESC;</pre></section><section className="auth-form"><p className="eyebrow">{mode === "login" ? "Chào mừng trở lại" : "Bắt đầu hành trình"}</p><h2>{mode === "login" ? "Đăng nhập." : "Tạo tài khoản."}</h2><div className="switch"><button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>Đăng nhập</button><button className={mode === "register" ? "active" : ""} onClick={() => setMode("register")}>Tạo tài khoản</button></div>{notice && <div className="notice">{notice}</div>}<form onSubmit={submitAuth}><label>Email<input name="email" type="email" required /></label><label>Mật khẩu<input name="password" type="password" minLength={mode === "register" ? 10 : 1} required /></label><button className="btn primary">{mode === "login" ? "Đăng nhập" : "Tạo tài khoản"} →</button></form></section></div> }
+function Learner({ tab, questions, weekly }: any) { const progress = weekly?.progress || { done: 0, total: 8, percent: 0 }; return <>{tab === "dashboard" && <><div className="weekly"><div><h2>{weekly?.challenge?.title || "Thử thách tuần #42"}</h2><p>Hoàn thành các bài trong tuần để ghi tên lên bảng xếp hạng cộng đồng.</p><div className="bar"><span style={{ width: `${progress.percent}%` }} /></div><strong>{progress.done}/{progress.total} câu hoàn thành <b>{progress.percent}%</b></strong><a>Xem bảng xếp hạng tuần →</a></div><span>ĐANG DIỄN RA</span></div><QuestionGrid questions={questions} /></>}{tab === "questions" && <QuestionGrid questions={questions} />}{tab === "progress" && <div className="card"><h2>Tiến độ</h2><p>{progress.done}/{progress.total} câu hoàn thành.</p></div>}</> }
+function Admin({ tab, stats, questions, docs, jobs, uploadDoc, generate, approve }: any) { return <>{tab === "admin" && <div className="stats">{[["Người dùng", stats.users], ["Câu hỏi", stats.questions], ["Đã duyệt", stats.approved_questions], ["Tài liệu", stats.documents]].map(x => <div className="stat" key={x[0]}><span>{x[0]}</span><strong>{x[1] ?? 0}</strong></div>)}</div>}{tab === "questions" && <QuestionGrid questions={questions} admin approve={approve} />}{tab === "documents" && <div className="card"><h2>Nạp tài liệu</h2><form onSubmit={uploadDoc}><input name="file" type="file" required /><button className="btn primary">Upload vào Mongo</button></form>{docs.map((d: any) => <p key={d.id}>{d.filename} · {d.size} bytes</p>)}</div>}{tab === "jobs" && <div className="card"><button className="btn primary" onClick={generate}>Sinh 3 đề AI</button>{jobs.map((j: any) => <p key={j.id}>{j.id} · {j.status}</p>)}</div>}</> }
+function QuestionGrid({ questions, admin, approve }: any) { return <div className="grid">{questions.map((q: Question) => <article className="question" key={q.id}><p className="tag">{q.difficulty || "medium"} · {q.topic || "SQL"}</p><h3>{q.question_text}</h3><small>{q.status}</small>{admin && <div><button onClick={() => approve(q, "approved")}>Duyệt</button><button onClick={() => approve(q, "rejected")}>Từ chối</button></div>}</article>)}</div> }
 
 createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
