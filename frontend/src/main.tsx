@@ -4,6 +4,7 @@ import "./styles.css";
 import { api, clearToken, errorText, hasToken, onSessionLost } from "./api";
 import type { AuditLog, Doc, Job, LlmSettings, Question, Stats, User, Weekly } from "./api";
 import { AuthScreen } from "./auth";
+import { Landing } from "./landing";
 import { Admin } from "./admin";
 import { Learner } from "./learner";
 
@@ -12,6 +13,8 @@ const LEARNER_NAV: [string, string][] = [["dashboard", "Dashboard"], ["questions
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [screen, setScreen] = useState<"landing" | "auth">(() => window.location.pathname === "/" ? "landing" : "auth");
+  const [authMode, setAuthMode] = useState<"login" | "register">(() => window.location.pathname === "/register" ? "register" : "login");
   const [notice, setNotice] = useState("");
   const [tab, setTab] = useState("dashboard");
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -60,6 +63,12 @@ function App() {
 
   useEffect(() => { load(user); }, [user, load]);
 
+  const showAuth = (mode: "login" | "register") => {
+    setAuthMode(mode);
+    setScreen("auth");
+    window.history.pushState({}, "", mode === "register" ? "/register" : "/login");
+  };
+
   const onAuthed = (authenticated: User) => {
     setNotice("");
     setUser(authenticated);
@@ -67,7 +76,10 @@ function App() {
   };
   const logout = () => { clearToken(); setUser(null); setNotice(""); };
 
-  if (!user) return <><AuthScreen onAuthed={onAuthed} />{notice && <div className="notice" role="alert">{notice}</div>}</>;
+  if (!user) {
+    if (screen === "landing") return <Landing onLogin={() => showAuth("login")} onRegister={() => showAuth("register")} />;
+    return <><AuthScreen mode={authMode} onModeChange={showAuth} onAuthed={onAuthed} />{notice && <div className="notice" role="alert">{notice}</div>}</>;
+  }
 
   const nav = user.role === "admin" ? ADMIN_NAV : LEARNER_NAV;
   return (

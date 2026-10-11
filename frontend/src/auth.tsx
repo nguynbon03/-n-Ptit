@@ -3,8 +3,7 @@ import type { FormEvent } from "react";
 import { api, errorText, setToken } from "./api";
 import type { User } from "./api";
 
-export function AuthScreen({ onAuthed }: { onAuthed: (user: User) => void }) {
-  const [mode, setMode] = useState<"login" | "register">("login");
+export function AuthScreen({ mode, onModeChange, onAuthed }: { mode: "login" | "register"; onModeChange: (mode: "login" | "register") => void; onAuthed: (user: User) => void }) {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -39,8 +38,8 @@ export function AuthScreen({ onAuthed }: { onAuthed: (user: User) => void }) {
         <p className="eyebrow">{mode === "login" ? "Chào mừng trở lại" : "Bắt đầu hành trình"}</p>
         <h2>{mode === "login" ? "Đăng nhập." : "Tạo tài khoản."}</h2>
         <div className="switch">
-          <button type="button" className={mode === "login" ? "active" : ""} onClick={() => setMode("login")}>Đăng nhập</button>
-          <button type="button" className={mode === "register" ? "active" : ""} onClick={() => setMode("register")}>Tạo tài khoản</button>
+          <button type="button" className={mode === "login" ? "active" : ""} onClick={() => onModeChange("login")}>Đăng nhập</button>
+          <button type="button" className={mode === "register" ? "active" : ""} onClick={() => onModeChange("register")}>Tạo tài khoản</button>
         </div>
         {notice && <div className="notice" role="alert">{notice}</div>}
         <form onSubmit={submit}>
