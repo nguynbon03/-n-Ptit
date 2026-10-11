@@ -7,7 +7,10 @@ import uuid
 import json
 import os
 import logging
+from pathlib import Path
 from datetime import datetime, timezone
+
+_DEFAULT_DB_PATH = "/tmp/questions.db" if os.getenv("VERCEL") else "data/questions.db"
 from enum import Enum
 from typing import Optional
 
@@ -48,7 +51,7 @@ def _now_iso() -> str:
 
 
 class QuestionBank:
-    def __init__(self, db_path: str = "data/questions.db"):
+    def __init__(self, db_path: str = _DEFAULT_DB_PATH):
         self.db_path = db_path
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self._init_db()
