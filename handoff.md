@@ -3,10 +3,10 @@
 ## Snapshot
 
 - Date: 2026-10-12
-- Branch: `feature/mongo-rbac-ui`
+- Branch: `main`
 - Continuation scope: Mongo MVP continuation plan `C01`–`C08` in `plan.md` (`status: APPROVED`). PostgreSQL rewrite remains out of scope.
-- Last shipped commit before this pass: `d16d960 feat: add Mongo RBAC web app slice`
-- State: `C01`–`C08` implemented and verified locally. Not committed by the executing pass until the user confirms; see "Open items".
+- Last shipped commit before this pass: `6fed92b feat: close Mongo MVP security, job, and admin gaps (C01-C08)`
+- State: `C01`–`C08` implemented, verified locally, committed, and pushed to `main`.
 
 ## Completed this pass
 
@@ -25,7 +25,7 @@
 
 ```text
 JWT_SECRET_KEY=test-secret pytest -q
-136 passed   (was 50 at d16d960)
+136 passed   (system Python pytest; project `.venv` lacks pytest)
 
 npm --prefix frontend run build
 passed (tsc -b + vite build)
@@ -61,10 +61,11 @@ unknown job detail               -> 404
 
 ## Open items
 
-1. No commit or push was made. `plan.md` and `handoff.md` already carried uncommitted user edits before this pass; those are preserved.
-2. No proof against Mongo Atlas or a Vercel deployment. The local environment has a broken `pyopenssl`/`cryptography` pair that makes `import pymongo` raise `AttributeError: module 'lib' has no attribute 'GEN_EMAIL'`, so no real Mongo connection could be opened here. This is a pre-existing environment defect, unrelated to this pass. Fix with `pip install 'pyopenssl>=23.2.0'` in the runtime that serves the app.
-3. `scripts/create_admin.py` writes to the store its own process selects. With no `MONGO_URI` it seeds an in-memory store that the API process never sees. Creating an admin for a running server requires a configured `MONGO_URI`; there is no promote-existing-user route.
-4. Provider tokens: rotate anything previously pasted outside a provider console before deploying.
+1. GitHub is synchronized: `main` points to commit `6fed92b` on `origin/main`.
+2. Vercel frontend is live at `https://doanptitb22.vercel.app/`, but `/api/health` returns `503` because required server env `MONGO_URI` is not configured. No deployment CLI/session was available to set it safely.
+3. Real Mongo proof remains pending. System Python lacks `pymongo`; project `.venv` has `pymongo 4.18.3`. Run checks in `.venv` or deploy with `requirements.txt`.
+4. `scripts/create_admin.py` writes to the store its own process selects. With no `MONGO_URI` it seeds an in-memory store that the API process never sees. Creating an admin for a running server requires configured `MONGO_URI`.
+5. Provider tokens: rotate anything previously pasted outside a provider console before deploying.
 
 ## Explicitly still not done
 
@@ -86,5 +87,5 @@ unknown job detail               -> 404
 ## Resume command
 
 ```text
-Read /Users/nguynbon03/Desktop/Đồ Án Ptit/plan.md and handoff.md. C01-C08 are implemented and locally verified at 136 passing tests. Next: fix the local pyopenssl/cryptography pair, then prove /health persistence: mongo against a real Mongo before any deployment.
+Read /Users/nguynbon03/Desktop/Đồ Án Ptit/CLAUDE.md, plan.md, and handoff.md. main is pushed at 6fed92b. Configure Vercel server env MONGO_URI, MONGO_DB_NAME, JWT_SECRET_KEY, then verify /api/health returns 200 with persistence: mongo before creating admin or enabling generation.
 ```
