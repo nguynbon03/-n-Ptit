@@ -24,12 +24,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+class ApiPrefixMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["path"].startswith("/api"):
+            scope = dict(scope)
+            scope["path"] = scope["path"][4:] or "/"
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(ApiPrefixMiddleware)
+
 _STATIC_DIR = Path(__file__).parent / "static"
+_FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
+_ASSET_DIR = _FRONTEND_DIR if _FRONTEND_DIR.is_dir() else _STATIC_DIR
 
 
 @app.get("/", include_in_schema=False)
 def frontend():
-    return FileResponse(_STATIC_DIR / "index.html")
+    return FileResponse(_ASSET_DIR / "index.html")
 
 
 @app.get("/static/{asset_path:path}", include_in_schema=False)

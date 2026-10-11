@@ -96,9 +96,21 @@ docker compose up --build
 
 Compose reads provider values from the shell or `.env`; it does not contain credentials. Local question data persists through `./data`.
 
+## Frontend
+
+Frontend dùng Vite + React + TypeScript trong `frontend/`. Chạy local:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Vite proxy `/api` tới FastAPI ở `http://127.0.0.1:8000`. Build production bằng `npm run build`.
+
 ## Vercel
 
-`vercel.json` uses the `@vercel/python` runtime and routes requests to `main.py`, including the static frontend. Configure these environment variables in Vercel before using generation:
+`vercel.json` builds `frontend/` with Vite, serves its output, and rewrites `/api/*` to the FastAPI function in `api/index.py`. Configure these environment variables in Vercel before using generation:
 
 - `AI_PROVIDER`
 - `ANTHROPIC_BASE_URL`
