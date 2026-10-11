@@ -1141,3 +1141,136 @@ If user approves this DRAFT, dispatch `dev-orchestration-agent` with this comman
 ```text
 Read /Users/nguynbon03/Desktop/Đồ Án Ptit/plan.md. Verify Mongo Atlas + RBAC + Admin LLM revision_status is APPROVED. Dispatch Wave B only: M01 then M02. Use dev-be-worker with exclusive scopes. Stop before M03 unless M01/M02 tests pass and no secret appears in diff.
 ```
+
+---
+
+# Mongo MVP continuation plan
+
+status: APPROVED
+approved: 2026-10-12 by user request
+created: 2026-10-12
+source: verified handoff review after `d16d960`
+
+## Context
+
+Current branch already ships Mongo/RBAC/UI prototype behavior and passes the existing 50-test backend suite plus frontend production build. Remaining work is not the full PostgreSQL SQLArena target; it is closing security, persistence, admin LLM, frontend session, and deployment gaps in the current Mongo slice. This continuation plan supersedes the stale “set Vercel env and redeploy” next-step list in `handoff.md` but does not change historical approved plans above.
+
+## Scope and non-goals
+
+- In scope: production Mongo fail-closed behavior, RBAC/projection coverage, safe document import, job status truth, admin LLM settings, direct Mongo generation persistence, audit records, memory-only frontend access token, API prefix proof, deployment smoke.
+- Out of scope: PostgreSQL rewrite, refresh-token rotation, durable worker leases, learner submissions, isolated production SQL executor, full weekly/progress/leaderboard domain, public deployment without explicit approval.
+- No real provider token or Mongo credential enters Git, tests, plan files, logs, screenshots, or frontend assets.
+
+## Current evidence
+
+- `handoff.md` records shipped behavior and explicit gaps.
+- `main.py` owns routes, `BackgroundTasks`, `_tasks`, document parsing, and Mongo sync.
+- `mongo_store.py` owns Mongo connection, memory fallback, indexes, and CRUD.
+- `auth.py` owns scrypt password verification, JWT creation, active-user checks, and admin dependency.
+- `frontend/src/main.tsx` stores access token in `localStorage` and has one-file API/auth/admin/learner UI.
+- `api/index.py` and `main.py` both strip `/api`; `vercel.json` rewrites `/api/*` to `api/index.py`.
+- Proof: `JWT_SECRET_KEY=test-secret pytest -q` => `50 passed`; `npm --prefix frontend run build` => passed; Python compile and `git diff --check` => passed.
+
+## Work breakdown and ownership
+
+### C01 — Mongo production guard and repository invariants
+
+- Profile/agent: `dev-be` / `dev-be-worker`
+- Scope: `mongo_store.py`, `.env.example`, `tests/test_mongo_store.py`
+- Depends on: none
+- Implement: add explicit production-mode detection for `ENV=production` or `VERCEL=1`; missing or unreachable `MONGO_URI` must raise a startup/health failure instead of returning memory mode. Preserve memory mode only for local tests/dev with no URI. Add duplicate checksum behavior and required indexes for documents, jobs, audit logs, weekly records, and submissions where supported.
+- Gate: tests prove local memory fallback, configured unreachable URI never silently falls back, production missing URI fails, duplicate document checksum is deterministic, and `health.persistence` cannot claim Mongo when disconnected.
+- Stop: any secret appears in fixture or error output.
+
+### C02 — RBAC, lock, and learner projection contract
+
+- Profile/agent: `dev-be` / `dev-be-worker`
+- Scope: `auth.py`, `main.py`, `tests/test_auth_rbac.py`, `tests/test_web.py`
+- Depends on: C01
+- Implement: cover anonymous `401`, learner admin-route `403`, locked-user denial after token creation, admin success, self-lock/self-demotion rejection, and learner-safe question/detail responses. Keep answer SQL, seed SQL, expected output, blueprint, review notes, and provider metadata out of learner responses.
+- Gate: focused RBAC tests plus full `pytest -q`; no route exposes admin data through status or error paths.
+
+### C03 — Safe document import and source records
+
+- Profile/agent: `dev-be` / `dev-be-worker`
+- Scope: `main.py`, `mongo_store.py`, `requirements.txt`, `tests/test_document_import.py`
+- Depends on: C01, C02
+- Implement: validate suffix before parsing; enforce byte limit before retaining content; reject duplicate checksum rather than silently inserting; keep only bounded text/preview; preserve source owner and checksum; replace literal `\\n` joins with real newlines for XLSX/PDF extraction; keep parser errors as safe `400` responses.
+- Gate: CSV/XLSX/JSON/MD/TXT/PDF fixtures, unsupported suffix, oversized upload, malformed content, duplicate checksum, learner upload denial, and bounded stored text tests.
+
+### C04 — Job status source of truth
+
+- Profile/agent: `dev-be` / `dev-be-worker`
+- Scope: `main.py`, `mongo_store.py`, `tests/test_generation_jobs.py`
+- Depends on: C01–C03
+- Implement: add `GET /admin/generation-jobs/{id}`; return Mongo job record after process-memory state disappears; use stable `queued|running|succeeded|failed` statuses and safe error codes; document `BackgroundTasks` as local/demo-only until durable worker exists; reject or clearly gate generation in production when no durable worker is configured.
+- Gate: create/list/detail, provider failure, restart-like lookup from Mongo, and production gate tests. No claim of durable execution.
+
+### C05 — Admin LLM settings and provider test
+
+- Profile/agent: `dev-be` / `dev-be-worker`; primary skill `claude-api`
+- Scope: `llm_gateway.py`, `main.py`, `mongo_store.py`, `tests/test_admin_llm_settings.py`
+- Depends on: C01, C02, C04
+- Implement: `GET /admin/settings/llm` safe summary; `PUT /admin/settings/llm` server-side config update with token redaction; `POST /admin/llm/test` using mockable provider; settings override resolves only on server; provider/auth/timeout failures map to safe errors; never log token, prompt, or raw provider body.
+- Gate: mocked success, invalid auth, timeout/error, redacted response, learner denial, and log/JSON secret absence tests.
+
+### C06 — Direct Mongo generation persistence and audit
+
+- Profile/agent: `dev-be` / `dev-be-worker`
+- Scope: `pipeline.py`, `main.py`, `mongo_store.py`, `tests/test_generation_jobs.py`, `tests/test_audit.py`
+- Depends on: C03–C05
+- Implement: preserve existing clarity/novelty/semantic/execution validators and Excel metadata, but make Mongo job/question records the target path. Remove reliance on post-run SQLite copy for target generation or mark it legacy-only. Add audit records for user mutation, upload, generation, and question review with actor/action/resource/timestamp and redacted summaries.
+- Gate: mock generation saves `pending_review` question with source job/document IDs; provider failure marks job failed; SQLite legacy tests still pass; audit records contain no secrets or answer data for learner-facing reads.
+
+### C07 — Frontend token/session boundary and admin completeness
+
+- Profile/agent: `dev-fe` / `dev-fe-worker`
+- Scope: `frontend/src/main.tsx`, `frontend/src/api.ts`, `frontend/src/auth.tsx`, `frontend/src/admin.tsx`, `frontend/src/learner.tsx`, `frontend/src/styles.css`, frontend tests if runner is added
+- Depends on: C02, C05, C06
+- Implement: move access token from `localStorage` to memory; clear token/user on `401`; do not invent refresh until backend endpoint exists; wire admin users, LLM settings, review notes, job detail/error, and document status/checksum; keep learner nav/data free of admin and answer fields. Split files only where needed to keep API/auth ownership clear.
+- Gate: `npm --prefix frontend run build`; static inspection/test confirms no token storage in Web Storage and no learner answer fields; admin actions show loading/error/confirmation states.
+
+### C08 — API prefix, deployment boundary, and smoke proof
+
+- Profile/agent: `devops` / `devops-worker`
+- Scope: `api/index.py`, `main.py`, `vercel.json`, `README.md`, `.env.example`, `docker-compose.yml`
+- Depends on: C01–C07
+- Implement: select one `/api` stripping layer; verify Vercel static build and API rewrite; document Mongo/Atlas env names, least-privilege user, TLS URI, network-access tradeoff, and no-memory-fallback production rule; keep provider and JWT secrets server-side; add local startup/health commands.
+- Gate: backend tests, frontend build, Vercel build, `/api/health` prefix smoke, secret scan, and documented manual smoke against deployed app only after explicit deployment approval.
+- Stop: no production deploy, Atlas network change, or secret rotation action from this plan without explicit user approval.
+
+## Dependency waves
+
+- Wave A: C01.
+- Wave B: C02 and C03 sequentially after C01.
+- Wave C: C04 and C05 after Wave B; C06 after C05.
+- Wave D: C07 after C06.
+- Wave E: C08 after all code/test waves.
+- Review after each wave; no concurrent edits to shared `main.py` or `mongo_store.py`.
+
+## Required final checks
+
+```text
+JWT_SECRET_KEY=test-secret pytest -q
+npm --prefix frontend run build
+python -m py_compile main.py auth.py mongo_store.py llm_gateway.py pipeline.py
+python -m pytest -q tests/test_auth_rbac.py tests/test_document_import.py tests/test_generation_jobs.py tests/test_admin_llm_settings.py
+npm --prefix frontend run build
+git diff --check
+```
+
+Manual checks require configured non-secret test environment:
+
+1. `/health` reports `persistence: mongo` against intended Atlas/local Mongo.
+2. Learner cannot access admin routes or answer fields.
+3. Admin can configure/test provider with redacted response.
+4. Admin upload creates one document and duplicate checksum is rejected or returns the documented existing record.
+5. Admin generation job survives an API process restart only if Mongo job state is authoritative; otherwise production gate remains blocked.
+
+## Handoff after plan approval
+
+Set this continuation marker to `APPROVED` only after explicit user approval. Then dispatch Wave A only:
+
+```text
+Use dev-orchestration-agent. Read /Users/nguynbon03/Desktop/Đồ Án Ptit/CLAUDE.md if present, plan.md, handoff.md, and .claude/agent-routing.json. Verify Mongo MVP continuation status is APPROVED. Dispatch C01 with dev-be-worker and exclusive scope mongo_store.py, .env.example, tests/test_mongo_store.py. Run focused tests, review diff for secrets, then stop before C02.
+```

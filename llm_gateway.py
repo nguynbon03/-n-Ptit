@@ -12,21 +12,51 @@ logger = logging.getLogger(__name__)
 
 JSON_INSTRUCTION = "\n\nRespond with ONLY valid JSON, no markdown, no explanation."
 
+_REDACTED = "***"
+
+
+class ProviderError(RuntimeError):
+    """Provider failure with a safe code and no secret or payload content."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+def classify_provider_error(exc: Exception) -> ProviderError:
+    """Map a provider exception to a safe code. Never includes token or body."""
+    name = exc.__class__.__name__
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    if status in (401, 403):
+        return ProviderError("invalid_auth", "Provider rejected the credential")
+    if status == 429:
+        return ProviderError("rate_limited", "Provider rate limit reached")
+    if status is not None and status >= 500:
+        return ProviderError("provider_unavailable", f"Provider returned HTTP {status}")
+    if status is not None:
+        return ProviderError("provider_error", f"Provider returned HTTP {status}")
+    if "Timeout" in name:
+        return ProviderError("timeout", "Provider request timed out")
+    if "Connect" in name or "Network" in name:
+        return ProviderError("network_error", "Provider is unreachable")
+    return ProviderError("provider_error", f"Provider call failed ({name})")
+
 
 class LLMGateway:
-    def __init__(self):
-        self.provider = os.getenv("AI_PROVIDER", "anthropic").strip().lower()
+    def __init__(self, overrides: dict | None = None):
+        self._overrides = {k: v for k, v in (overrides or {}).items() if v not in (None, "")}
+        self.provider = self._setting("AI_PROVIDER", "anthropic").strip().lower()
 
         if self.provider == "anthropic":
             self.base_url = self._build_anthropic_url(
-                os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1/messages")
+                self._setting("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1/messages")
             )
             self.model = (
-                os.getenv("ANTHROPIC_MODEL", "").strip()
-                or os.getenv("ANTHROPIC_DEFAULT_OPUS_MODEL", "").strip()
+                self._setting("ANTHROPIC_MODEL", "").strip()
+                or self._setting("ANTHROPIC_DEFAULT_OPUS_MODEL", "").strip()
                 or "claude-sonnet-4-6"
             )
-            self.api_key = os.getenv("ANTHROPIC_AUTH_TOKEN", "").strip() or os.getenv(
+            self.api_key = self._setting("ANTHROPIC_AUTH_TOKEN", "").strip() or self._setting(
                 "ANTHROPIC_API_KEY", ""
             ).strip()
             if not self.api_key:
@@ -35,18 +65,18 @@ class LLMGateway:
                     "when AI_PROVIDER=anthropic"
                 )
         elif self.provider == "gemini":
-            self.gemini_api_key = os.getenv("GEMINI_API_KEY", "")
-            self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+            self.gemini_api_key = self._setting("GEMINI_API_KEY", "")
+            self.gemini_model = self._setting("GEMINI_MODEL", "gemini-2.0-flash")
             if not self.gemini_api_key:
                 raise RuntimeError("GEMINI_API_KEY is required when AI_PROVIDER=gemini")
             self._init_gemini()
         elif self.provider == "nvidia":
-            self.base_url = os.getenv(
+            self.base_url = self._setting(
                 "NVIDIA_BASE_URL",
                 "https://integrate.api.nvidia.com/v1/chat/completions",
             ).rstrip("/")
-            self.model = os.getenv("NVIDIA_MODEL", "google/gemma-4-31b-it")
-            self.api_key = os.getenv("NVIDIA_API_KEY", "")
+            self.model = self._setting("NVIDIA_MODEL", "google/gemma-4-31b-it")
+            self.api_key = self._setting("NVIDIA_API_KEY", "")
             if not self.api_key:
                 raise RuntimeError("NVIDIA_API_KEY is required when AI_PROVIDER=nvidia")
         else:
@@ -59,6 +89,45 @@ class LLMGateway:
             self.provider,
             self.gemini_model if self.provider == "gemini" else self.model,
         )
+
+    def _setting(self, key: str, default: str = "") -> str:
+        """Server-side settings override env; neither value is ever logged."""
+        if key in self._overrides:
+            return str(self._overrides[key])
+        return os.getenv(key, default)
+
+    def ping(self, timeout: float = 20.0) -> dict:
+        """One short provider call used by the admin connectivity test.
+
+        Raises ProviderError with a safe code. Never returns or logs the token.
+        """
+        if self.provider == "gemini":
+            try:
+                response = self._gemini_client.generate_content("Reply with OK")
+                text = (getattr(response, "text", "") or "").strip()
+            except Exception as exc:
+                raise classify_provider_error(exc) from exc
+            return {"provider": "gemini", "model": self.gemini_model, "sample": text[:80]}
+
+        if self.provider == "anthropic":
+            payload = {"model": self.model, "max_tokens": 16, "messages": [{"role": "user", "content": "Reply with OK"}]}
+            headers = {"x-api-key": self.api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
+        else:
+            payload = {"model": self.model, "max_tokens": 16, "messages": [{"role": "user", "content": "Reply with OK"}]}
+            headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+
+        try:
+            response = httpx.post(self.base_url, json=payload, headers=headers, timeout=timeout)
+            response.raise_for_status()
+            data = response.json()
+        except Exception as exc:
+            raise classify_provider_error(exc) from exc
+
+        if self.provider == "anthropic":
+            sample = "".join(block.get("text", "") for block in data.get("content", []) if block.get("type") == "text")
+        else:
+            sample = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
+        return {"provider": self.provider, "model": self.model, "sample": (sample or "").strip()[:80]}
 
     @staticmethod
     def _build_anthropic_url(raw_url: str) -> str:

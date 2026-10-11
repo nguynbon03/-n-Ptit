@@ -1,15 +1,12 @@
-from main import app as _app
+"""Vercel Python entrypoint.
 
+The `/api` prefix is stripped in exactly one place: `ApiPrefixMiddleware` in
+`main.py`. That middleware is registered last, so it runs outermost and works
+both for local `uvicorn main:app` and for Vercel, which forwards the original
+`/api/...` path to this function. Do not add a second stripping layer here:
+two layers would turn `/api/api/health` into a valid route and break
+`/api/<asset>` paths.
+"""
+from main import app
 
-class StripApiPrefix:
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "http" and scope["path"].startswith("/api"):
-            scope = dict(scope)
-            scope["path"] = scope["path"][4:] or "/"
-        await self.app(scope, receive, send)
-
-
-app = StripApiPrefix(_app)
+__all__ = ["app"]

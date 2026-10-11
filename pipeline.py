@@ -450,10 +450,11 @@ def generate_pipeline(
     schema_path: str | None = None,
     excel_id: str | None = None,
     excel_path: str | None = None,
+    llm_overrides: dict | None = None,
 ) -> dict:
     schema_path = schema_path or str(_BASE_DIR / "schema.json")
     excel_path = excel_path or str(_BASE_DIR / "Master_SQL_Dataset_All_Sources_2_1.xlsx")
-    llm = LLMGateway()
+    llm = LLMGateway(overrides=llm_overrides)
     bank = QuestionBank()
 
     excel_reference = None

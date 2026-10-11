@@ -17,7 +17,16 @@ services:
       NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
       NVIDIA_BASE_URL: ${NVIDIA_BASE_URL:-https://integrate.api.nvidia.com/v1/chat/completions}
       NVIDIA_MODEL: ${NVIDIA_MODEL:-google/gemma-4-31b-it}
-      ENV: production
+      # ENV=production makes Mongo mandatory: MONGO_URI must be set and
+      # reachable or startup and /health fail instead of using memory.
+      ENV: ${ENV:-production}
+      MONGO_URI: ${MONGO_URI:?set MONGO_URI in .env or the shell}
+      MONGO_DB_NAME: ${MONGO_DB_NAME:-sqlarena}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?set JWT_SECRET_KEY in .env or the shell}
+      JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-12}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-5242880}
+      # BackgroundTasks is not a durable worker; generation stays off by default.
+      ALLOW_BACKGROUND_JOBS: ${ALLOW_BACKGROUND_JOBS:-0}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]

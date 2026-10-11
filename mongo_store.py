@@ -12,6 +12,13 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def is_production() -> bool:
+    """True when this process must never use the in-memory fallback."""
+    if os.getenv("ENV", "").strip().lower() == "production":
+        return True
+    return os.getenv("VERCEL", "").strip().lower() not in {"", "0", "false"}
+
+
 _SEED_QUESTIONS = [
     {
         "id": "seed-select-001",
@@ -45,13 +52,17 @@ _SEED_QUESTIONS = [
 class MongoStore:
     """Small repository used by API routes and CLI tools.
 
-    Memory mode is allowed only when MONGO_URI is absent. A configured but
-    unreachable MongoDB never silently becomes the source of truth.
+    Memory mode is allowed only for local dev/test when MONGO_URI is absent.
+    A configured but unreachable MongoDB never silently becomes the source of
+    truth: every read/write raises and `mode` reports `unavailable`. When
+    `ENV=production` or `VERCEL` is set, a missing or unreachable URI fails at
+    construction time.
     """
 
     def __init__(self, *, require_connection: bool = False):
         self.uri = os.getenv("MONGO_URI", "").strip()
         self.db_name = os.getenv("MONGO_DB_NAME", "sqlarena").strip() or "sqlarena"
+        self.require_connection = require_connection or is_production()
         self._client = None
         self._db = None
         self.error: str | None = None
@@ -74,11 +85,14 @@ class MongoStore:
                 }
             ],
             "jobs": [],
+            "submissions": [],
         }
         if self.uri:
             self._connect()
-        elif require_connection:
-            raise RuntimeError("MONGO_URI is required")
+            if not self.connected and self.require_connection:
+                raise RuntimeError(f"MongoDB connection required but unavailable: {self.error}")
+        elif self.require_connection:
+            raise RuntimeError("MONGO_URI is required when ENV=production or VERCEL is set")
 
     def _connect(self) -> None:
         try:
@@ -99,16 +113,26 @@ class MongoStore:
 
     @property
     def mode(self) -> str:
-        return "mongo" if self.connected else "memory"
+        if self.connected:
+            return "mongo"
+        return "unavailable" if self.uri else "memory"
 
     def _ensure_indexes(self) -> None:
         assert self._db is not None
         self._db.users.create_index("email", unique=True)
+        self._db.users.create_index("id", unique=True)
+        self._db.questions.create_index("id", unique=True)
         self._db.questions.create_index([("status", 1), ("difficulty", 1), ("topic", 1), ("created_at", -1)])
         self._db.documents.create_index("checksum", unique=True)
+        self._db.documents.create_index("id", unique=True)
         self._db.challenges.create_index([("status", 1), ("starts_at", -1)])
+        self._db.jobs.create_index("id", unique=True)
         self._db.jobs.create_index([("status", 1), ("created_at", -1)])
         self._db.audit_logs.create_index([("actor_id", 1), ("created_at", -1)])
+        self._db.audit_logs.create_index([("resource_type", 1), ("resource_id", 1), ("created_at", -1)])
+        self._db.settings.create_index("key", unique=True)
+        self._db.submissions.create_index([("user_id", 1), ("created_at", -1)])
+        self._db.submissions.create_index([("question_id", 1), ("created_at", -1)])
 
     @staticmethod
     def _without_id(item: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -119,6 +143,8 @@ class MongoStore:
 
     def _collection(self, name: str):
         if self._db is None:
+            if self.uri:
+                raise RuntimeError(self.error or "MongoDB unavailable")
             return None
         return self._db[name]
 
@@ -212,14 +238,30 @@ class MongoStore:
         return False
 
     def save_document(self, document: dict[str, Any]) -> dict[str, Any]:
+        """Insert one document. Duplicate checksum raises ValueError."""
         item = {**document, "id": document.get("id", str(uuid.uuid4())), "created_at": document.get("created_at", _now()), "status": document.get("status", "pending_review")}
+        checksum = item.get("checksum")
         collection = self._collection("documents")
         if collection is not None:
-            collection.insert_one(dict(item))
+            try:
+                collection.insert_one(dict(item))
+            except Exception as exc:
+                if exc.__class__.__name__ == "DuplicateKeyError":
+                    raise ValueError("Document with this checksum already exists") from exc
+                raise
         else:
             with self._lock:
+                if checksum and any(x.get("checksum") == checksum for x in self.memory["documents"]):
+                    raise ValueError("Document with this checksum already exists")
                 self.memory["documents"].append(dict(item))
         return item
+
+    def document_by_checksum(self, checksum: str) -> dict[str, Any] | None:
+        collection = self._collection("documents")
+        if collection is not None:
+            return self._without_id(collection.find_one({"checksum": checksum}, {"_id": 0}))
+        with self._lock:
+            return next((dict(x) for x in self.memory["documents"] if x.get("checksum") == checksum), None)
 
     def documents(self, limit: int = 100) -> list[dict[str, Any]]:
         collection = self._collection("documents")
@@ -280,6 +322,50 @@ class MongoStore:
         if collection is not None:
             return self._without_id(collection.find_one({}, {"_id": 0}, sort=[("created_at", -1)]))
         return dict(self.memory["jobs"][-1]) if self.memory["jobs"] else None
+
+    def setting(self, key: str) -> dict[str, Any] | None:
+        collection = self._collection("settings")
+        if collection is not None:
+            return self._without_id(collection.find_one({"key": key}, {"_id": 0}))
+        with self._lock:
+            return next((dict(x) for x in self.memory["settings"] if x.get("key") == key), None)
+
+    def save_setting(self, key: str, value: dict[str, Any]) -> dict[str, Any]:
+        item = {"key": key, "value": value, "updated_at": _now()}
+        collection = self._collection("settings")
+        if collection is not None:
+            collection.replace_one({"key": key}, item, upsert=True)
+        else:
+            with self._lock:
+                self.memory["settings"] = [x for x in self.memory["settings"] if x.get("key") != key]
+                self.memory["settings"].append(dict(item))
+        return dict(item)
+
+    def save_audit(self, entry: dict[str, Any]) -> dict[str, Any]:
+        """Append one audit record. Caller must pass an already-redacted summary."""
+        item = {
+            "id": str(uuid.uuid4()),
+            "actor_id": entry.get("actor_id", ""),
+            "action": entry.get("action", ""),
+            "resource_type": entry.get("resource_type", ""),
+            "resource_id": entry.get("resource_id", ""),
+            "summary": entry.get("summary", ""),
+            "created_at": _now(),
+        }
+        collection = self._collection("audit_logs")
+        if collection is not None:
+            collection.insert_one(dict(item))
+        else:
+            with self._lock:
+                self.memory["audit_logs"].append(dict(item))
+        return item
+
+    def audit_logs(self, limit: int = 100) -> list[dict[str, Any]]:
+        collection = self._collection("audit_logs")
+        if collection is not None:
+            return [self._without_id(x) for x in collection.find({}, {"_id": 0}).sort("created_at", -1).limit(limit)]
+        with self._lock:
+            return [dict(x) for x in self.memory["audit_logs"][-limit:]][::-1]
 
 
 _store: MongoStore | None = None

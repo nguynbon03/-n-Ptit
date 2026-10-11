@@ -8,6 +8,7 @@ pydantic
 google-generativeai
 aiofiles
 openpyxl
+pypdf==6.9.1
 pymongo
 python-multipart
 passlib[bcrypt]
