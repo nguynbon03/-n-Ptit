@@ -5,68 +5,69 @@ from unittest.mock import Mock, patch
 from llm_gateway import LLMGateway
 
 
-class OllamaJsonModeTests(unittest.TestCase):
+class AnthropicGatewayTests(unittest.TestCase):
     @patch("llm_gateway.httpx.post")
-    def test_requests_json_format_when_expected(self, mock_post):
+    def test_uses_anthropic_messages_api_and_extracts_text(self, mock_post):
         response = Mock(status_code=200)
-        response.json.return_value = {"response": '{"ok": true}'}
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"content": [{"type": "text", "text": '{"ok": true}'}]}
         mock_post.return_value = response
-        with patch.dict(os.environ, {"AI_PROVIDER": "ollama"}, clear=False):
-            gateway = LLMGateway()
-            result = gateway.generate("generator", "Return JSON", expect_json=True)
+        with patch.dict(
+            os.environ,
+            {
+                "AI_PROVIDER": "anthropic",
+                "ANTHROPIC_BASE_URL": "https://example.test/v1",
+                "ANTHROPIC_AUTH_TOKEN": "test-token",
+                "ANTHROPIC_MODEL": "test-model",
+            },
+            clear=False,
+        ):
+            result = LLMGateway().generate("generator", "Return JSON", expect_json=True)
 
-        payload = mock_post.call_args.kwargs["json"]
-        self.assertEqual(payload["format"], "json")
+        request = mock_post.call_args.kwargs
+        self.assertEqual(mock_post.call_args.args[0], "https://example.test/v1/messages")
+        self.assertEqual(request["headers"]["x-api-key"], "test-token")
+        self.assertEqual(request["json"]["model"], "test-model")
+        self.assertIn("ONLY valid JSON", request["json"]["messages"][0]["content"])
         self.assertEqual(result, '{"ok": true}')
 
-    @patch("llm_gateway.httpx.post")
-    def test_does_not_force_json_for_plain_text(self, mock_post):
-        response = Mock(status_code=200)
-        response.json.return_value = {"response": "plain text"}
-        mock_post.return_value = response
-        with patch.dict(os.environ, {"AI_PROVIDER": "ollama"}, clear=False):
+    def test_anthropic_requires_token(self):
+        with patch.dict(
+            os.environ,
+            {"AI_PROVIDER": "anthropic", "ANTHROPIC_AUTH_TOKEN": ""},
+            clear=False,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "ANTHROPIC_AUTH_TOKEN"):
+                LLMGateway()
+
+    def test_default_provider_is_anthropic(self):
+        with patch.dict(
+            os.environ,
+            {"ANTHROPIC_AUTH_TOKEN": "test-token"},
+            clear=True,
+        ):
             gateway = LLMGateway()
-            gateway.generate("other", "Return text")
+        self.assertEqual(gateway.provider, "anthropic")
 
-        payload = mock_post.call_args.kwargs["json"]
-        self.assertNotIn("format", payload)
-
-
-class NvidiaGatewayTests(unittest.TestCase):
     @patch("llm_gateway.httpx.post")
-    def test_calls_nvidia_chat_completions(self, mock_post):
-        response = Mock()
+    def test_nvidia_chat_completions_remains_supported(self, mock_post):
+        response = Mock(status_code=200)
         response.raise_for_status.return_value = None
-        response.json.return_value = {
-            "choices": [{"message": {"content": '{"ok": true}'}}]
-        }
+        response.json.return_value = {"choices": [{"message": {"content": '{"ok": true}'}}]}
         mock_post.return_value = response
-
         with patch.dict(
             os.environ,
             {
                 "AI_PROVIDER": "nvidia",
                 "NVIDIA_API_KEY": "test-key",
-                "NVIDIA_MODEL": "google/gemma-4-31b-it",
+                "NVIDIA_MODEL": "test-model",
             },
             clear=False,
         ):
-            gateway = LLMGateway()
-            result = gateway.generate("generator", "Return JSON", expect_json=True)
+            result = LLMGateway().generate("generator", "Return JSON", expect_json=True)
 
-        request = mock_post.call_args.kwargs
-        self.assertEqual(request["json"]["model"], "google/gemma-4-31b-it")
-        self.assertEqual(request["headers"]["Authorization"], "Bearer test-key")
+        self.assertEqual(mock_post.call_args.kwargs["headers"]["Authorization"], "Bearer test-key")
         self.assertEqual(result, '{"ok": true}')
-
-    def test_requires_api_key(self):
-        with patch.dict(
-            os.environ,
-            {"AI_PROVIDER": "nvidia", "NVIDIA_API_KEY": ""},
-            clear=False,
-        ):
-            with self.assertRaisesRegex(RuntimeError, "NVIDIA_API_KEY"):
-                LLMGateway()
 
 
 if __name__ == "__main__":

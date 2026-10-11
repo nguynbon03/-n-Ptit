@@ -380,7 +380,7 @@ Repo này rất nhỏ và chỉ là prototype của phần “AI Question Genera
 1. FastAPI nhận request
 2. Gọi `generate_pipeline(specs)`
 3. Với từng spec (`easy`, `medium`, `hard`)
-4. Gửi prompt sang Ollama
+4. Gửi prompt sang Anthropic-compatible HTTP provider
 5. Nhận JSON text từ LLM
 6. Extract SQL bằng regex
 7. Parse SQL bằng `sqlglot`
@@ -393,7 +393,7 @@ Repo này rất nhỏ và chỉ là prototype của phần “AI Question Genera
 - `pipeline.py`
   - Flow generate + validate + save file
 - `llm_gateway.py`
-  - Gọi Ollama
+  - Gọi Anthropic-compatible HTTP provider
 - `schema.json`
   - File schema dự kiến dùng cho prompt
 - `docker-compose.yml`
@@ -407,7 +407,7 @@ Repo này rất nhỏ và chỉ là prototype của phần “AI Question Genera
 - `httpx`
 - `sqlglot`
 - `python-dotenv`
-- `Ollama`
+- `Anthropic-compatible HTTP provider`
 
 ### 8.4. Repo hiện tại KHÔNG phải là gì
 

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="SQLArena SQL question generation and verification workspace">
+  <title>SQLArena workspace</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script type="module" src="/static/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">S</span><span>SQLArena</span></div>
+    <div class="topbar-actions"><span id="health-badge" class="badge" data-state="pending" role="status" aria-live="polite">Checking API</span><a href="/docs" target="_blank" rel="noreferrer">API docs</a></div>
+  </header>
+  <main id="main" class="shell">
+    <section class="hero" aria-labelledby="page-title">
+      <div><p class="eyebrow">SQL learning operations</p><h1 id="page-title">Generate, inspect, verify.</h1><p class="lede">One focused workspace for building reliable SQL practice questions from your local FastAPI pipeline.</p></div>
+      <div class="hero-note"><strong id="health-copy">API status pending</strong><span>Local-first. Credentials stay server-side.</span></div>
+    </section>
+
+    <section class="metric-grid" aria-label="Question statistics">
+      <article class="metric-card"><span>Total questions</span><strong id="metric-total">—</strong></article>
+      <article class="metric-card"><span>Valid rate</span><strong id="metric-valid">—</strong></article>
+      <article class="metric-card"><span>Pending review</span><strong id="metric-pending">—</strong></article>
+      <article class="metric-card"><span>Approved</span><strong id="metric-approved">—</strong></article>
+    </section>
+
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+    <div class="workspace-grid">
+      <section class="panel generation-panel" aria-labelledby="generate-title">
+        <div class="panel-heading"><div><p class="eyebrow">Pipeline</p><h2 id="generate-title">Generate questions</h2></div><span class="panel-index">01</span></div>
+        <form id="generate-form">
+          <fieldset id="specs" class="choice-group">
+            <legend>Difficulty tracks</legend>
+          <div class="choice-row"><label class="choice"><input type="checkbox" name="spec" value="easy" checked><span>Easy</span></label><label class="choice"><input type="checkbox" name="spec" value="medium" checked><span>Medium</span></label><label class="choice"><input type="checkbox" name="spec" value="hard" checked><span>Hard</span></label></div>
+          </fieldset>
+          <label for="questions-per-spec">Questions per track</label><input id="questions-per-spec" type="number" min="1" max="10" value="1">
+          <label for="excel-id">Excel target <span class="muted">optional</span></label><input id="excel-id" type="text" placeholder="e.g. SQL-001">
+          <button class="button button-primary" type="submit">Start generation <span aria-hidden="true">→</span></button>
+        </form>
+        <div id="task-panel" class="task-panel" hidden><div class="task-heading"><strong>Generation progress</strong><span id="task-state">Queued</span></div><div class="progress-track"><div id="task-progress" role="progressbar" aria-label="Generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="15"></div></div><p id="task-message">Waiting for pipeline…</p></div>
+      </section>
+
+      <section class="panel verify-panel" aria-labelledby="verify-title">
+        <div class="panel-heading"><div><p class="eyebrow">Sandbox</p><h2 id="verify-title">Verify SQL</h2></div><span class="panel-index">02</span></div>
+        <form id="verify-form">
+          <label for="ddl-sql">DDL schema</label><textarea id="ddl-sql" rows="3" placeholder="CREATE TABLE users (...);"></textarea>
+          <label for="seed-sql">Seed data</label><textarea id="seed-sql" rows="3" placeholder="INSERT INTO users VALUES (...);"></textarea>
+          <label for="answer-sql">Answer query</label><textarea id="answer-sql" rows="3" placeholder="SELECT * FROM users;"></textarea>
+          <button class="button button-secondary" type="submit">Run verification <span aria-hidden="true">↗</span></button>
+        </form>
+        <div id="verify-result" class="result-box" role="status" aria-live="polite">Results appear here.</div>
+      </section>
+    </div>
+
+    <section class="panel library-panel" aria-labelledby="library-title">
+      <div class="panel-heading library-heading"><div><p class="eyebrow">Question bank</p><h2 id="library-title">Review library</h2></div><div class="filters"><label class="sr-only" for="difficulty-filter">Difficulty</label><select id="difficulty-filter"><option value="">All difficulty</option><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select><label class="sr-only" for="status-filter">Status</label><select id="status-filter"><option value="">All status</option><option value="pending_review">Pending review</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="archived">Archived</option></select><button id="refresh-questions" class="button button-small" type="button">Refresh</button></div></div>
+      <div id="questions-list" class="questions-list"><div class="empty-state">Loading questions…</div></div>
+    </section>
+
+    <section id="question-detail" class="panel detail-panel" aria-labelledby="detail-title" hidden>
+      <div class="panel-heading"><div><p class="eyebrow">Selected question</p><h2 id="detail-title">Question detail</h2></div><button id="close-detail" class="icon-button" type="button" aria-label="Close question detail">×</button></div>
+      <div id="detail-content"></div>
+    </section>
+  </main>
+  <footer class="footer"><span>SQLArena</span><span>FastAPI · SQLite · sandboxed SQL checks</span></footer>
+</body>
+</html>

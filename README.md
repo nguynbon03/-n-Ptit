@@ -1,216 +1,118 @@
-# SQLArena AI Question Generator Pipeline
+# SQLArena
 
-Hệ thống tự động sinh câu hỏi SQL theo độ khó bằng AI (Ollama/LLaMA), được xây dựng với **FastAPI** + **Prefect** + **sqlglot**, hỗ trợ chạy local hoặc qua Docker.
+SQLArena is a local-first FastAPI workspace for generating, reviewing, and verifying SQL practice questions. It uses SQLite for the question bank and a sandboxed SQLite runner for answer checks.
 
----
+## Current product
 
-## 📁 Cấu trúc dự án
+- Responsive frontend at `/`.
+- API health and Swagger UI at `/health` and `/docs`.
+- Generation by difficulty, optional Excel target, and background task polling.
+- Question bank filtering by difficulty/status, detail view, and review status updates.
+- Aggregate stats.
+- SQL verification with DDL, seed data, answer query, row count, output, and timeout/error reporting.
+- Anthropic-compatible HTTP provider by default; Gemini and NVIDIA remain supported when configured.
 
-```
-PIPELINE/
-├── main.py              # FastAPI entrypoint, expose /generate API
-├── pipeline.py          # Prefect flow: sinh câu hỏi → validate SQL
-├── llm_gateway.py       # Giao tiếp với Ollama LLM
-├── schema.json          # Schema DB dùng để sinh câu hỏi
-├── requirements.txt     # Các thư viện Python cần thiết
-├── Dockerfile           # Build Docker image
-├── docker-compose.yml   # Chạy service qua Docker Compose
-├── .env                 # Biến môi trường (không commit)
-├── .env.example         # Template biến môi trường
-└── Output/              # Kết quả sinh ra, phân theo ngày
-    └── YYYY-MM-DD/
-        └── sql_questions_*.json
-```
+The larger design package describes authentication, PostgreSQL, learner submissions, weekly sets, admin RBAC, and worker infrastructure. Those contracts are not implemented in this checkout and are not claimed here.
 
----
+## Local setup
 
-## ⚙️ Kiến trúc hệ thống
-
-```
-POST /generate
-     │
-     ▼
-FastAPI (main.py)
-     │
-     ▼
-Prefect Flow (pipeline.py)
-     │
-     ├── [Task] generator(spec)
-     │       └── Gửi prompt → LLMGateway → Ollama → trả raw JSON
-     │
-     ├── [Task] validate(raw)
-     │       └── Extract SQL → parse bằng sqlglot
-     │
-     └── Lưu kết quả vào Output/YYYY-MM-DD/*.json
-```
-
----
-
-## 🗄️ Database Schema
-
-Schema được định nghĩa trong `schema.json` và nhúng vào prompt khi sinh câu hỏi:
-
-| Table         | Columns                                              |
-|---------------|------------------------------------------------------|
-| `employees`   | id, name, department_id, role                        |
-| `departments` | id, name                                             |
-| `products`    | product_id, category_id, price, stock                |
-| `sales`       | sale_id, product_id, quantity                        |
-| `inventory`   | product_id, quantity                                 |
-
----
-
-## 🔧 Cài đặt & Chạy local
-
-### Yêu cầu
-
-- Python 3.11+
-- [Ollama](https://ollama.com) đang chạy local với model đã pull sẵn (mặc định: `llama3`)
-
-### 1. Cài thư viện
+Requirements: Python 3.11+.
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-```
-
-### 2. Cấu hình `.env`
-
-Tạo file `.env` từ template:
-
-```bash
 cp .env.example .env
-```
-
-Chỉnh sửa nội dung:
-
-```env
-OLLAMA_HOST=http://localhost:11434
-MODEL_NAME=llama3
-AI_PROVIDER=ollama
-```
-
-### 3. Pull model Ollama (nếu chưa có)
-
-```bash
-ollama pull llama3
-```
-
-### 4. Chạy server
-
-```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 5. Chạy pipeline trực tiếp (không cần API)
+Open `http://localhost:8000/`. API documentation is at `http://localhost:8000/docs`.
 
-```bash
-python pipeline.py
+## Environment
+
+`.env.example` is the complete template. Keep `.env` private and never commit credentials.
+
+```env
+AI_PROVIDER=anthropic
+ANTHROPIC_BASE_URL=https://api.anthropic.com/v1/messages
+ANTHROPIC_AUTH_TOKEN=
+ANTHROPIC_MODEL=claude-sonnet-4-6
+ANTHROPIC_DEFAULT_OPUS_MODEL=
 ```
 
----
+`ANTHROPIC_MODEL` wins. `ANTHROPIC_DEFAULT_OPUS_MODEL` is only a compatibility fallback when the primary model is empty. The gateway sends the prompt over HTTP with `x-api-key`, Anthropic API version, and JSON content headers. No token is bundled in source, frontend assets, Docker config, or Vercel config.
 
-## 🐳 Chạy bằng Docker
+Optional providers:
 
-### Yêu cầu
+```env
+AI_PROVIDER=gemini
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.0-flash
 
-- Docker + Docker Compose
-- Ollama chạy trên máy host
-
-### Build & start
-
-```bash
-docker-compose up --build
+AI_PROVIDER=nvidia
+NVIDIA_API_KEY=
+NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1/chat/completions
+NVIDIA_MODEL=google/gemma-4-31b-it
 ```
 
-> Ollama trên host sẽ được truy cập qua `host.docker.internal:11434` — đã cấu hình sẵn trong `docker-compose.yml`.
+Generation requires a configured provider credential. Health, question browsing, stats, and SQL verification do not call an LLM.
 
----
+## API examples
 
-## 🚀 Sử dụng API
-
-### Endpoint: `POST /generate`
-
-**Request body:**
-
-```json
-{
-  "specs": ["easy", "medium", "hard"]
-}
-```
-
-- `specs`: danh sách độ khó muốn sinh. Mặc định: `["easy", "medium", "hard"]`
-
-**Ví dụ với curl:**
+Start generation:
 
 ```bash
 curl -X POST http://localhost:8000/generate \
-  -H "Content-Type: application/json" \
-  -d '{"specs": ["easy", "medium", "hard"]}'
+  -H 'Content-Type: application/json' \
+  -d '{"specs":["easy","medium"],"questions_per_spec":1}'
 ```
 
-**Response mẫu:**
+For more than three questions, poll the returned task ID:
 
-```json
-{
-  "results": [
-    {
-      "spec": "easy",
-      "valid": true,
-      "raw": {
-        "question": "List all employees in the Sales department.",
-        "sql": "SELECT e.name FROM employees e JOIN departments d ON e.department_id = d.id WHERE d.name = 'Sales'",
-        "difficulty": "easy"
-      }
-    }
-  ]
-}
+```bash
+curl http://localhost:8000/tasks/TASK_ID
 ```
 
-### Swagger UI
+List and filter questions:
 
-Truy cập tài liệu API tương tác tại:
-
-```
-http://localhost:8000/docs
-```
-
----
-
-## 📦 Output
-
-Mỗi lần chạy pipeline sẽ tạo file JSON tại:
-
-```
-Output/YYYY-MM-DD/sql_questions_<specs>_<HHMMSS>.json
+```bash
+curl 'http://localhost:8000/questions?difficulty=medium&status=pending_review'
+curl http://localhost:8000/stats
 ```
 
-Ví dụ:
+Verify SQL safely in an in-memory SQLite database:
 
+```bash
+curl -X POST http://localhost:8000/verify-sql \
+  -H 'Content-Type: application/json' \
+  -d '{"ddl_sql":"CREATE TABLE users (id INTEGER, name TEXT);","seed_sql":"INSERT INTO users VALUES (1, '\''Ada'\'');","answer_sql":"SELECT * FROM users;"}'
 ```
-Output/2026-04-26/sql_questions_easy_medium_hard_155056.json
+
+## Docker
+
+```bash
+docker compose up --build
 ```
 
----
+Compose reads provider values from the shell or `.env`; it does not contain credentials. Local question data persists through `./data`.
 
-## 🧩 Thư viện sử dụng
+## Vercel
 
-| Package       | Mục đích                          |
-|---------------|-----------------------------------|
-| `fastapi`     | Web API framework                 |
-| `uvicorn`     | ASGI server                       |
-| `prefect`     | Orchestrate pipeline tasks/flows  |
-| `httpx`       | HTTP client gọi Ollama API        |
-| `sqlglot`     | Parse & validate SQL syntax       |
-| `python-dotenv` | Load biến môi trường từ `.env` |
+`vercel.json` uses the `@vercel/python` runtime and routes requests to `main.py`, including the static frontend. Configure these environment variables in Vercel before using generation:
 
----
+- `AI_PROVIDER`
+- `ANTHROPIC_BASE_URL`
+- `ANTHROPIC_AUTH_TOKEN`
+- `ANTHROPIC_MODEL`
+- `ANTHROPIC_DEFAULT_OPUS_MODEL`
 
-## 🐛 Troubleshooting
+Gemini/NVIDIA variables are only needed when selecting those providers. SQLite storage is local/ephemeral on serverless deployments; use local Docker or add a persistent database before treating Vercel as production storage.
 
-| Vấn đề | Giải pháp |
-|--------|-----------|
-| Ollama không kết nối được | Kiểm tra `OLLAMA_HOST` trong `.env`, đảm bảo Ollama đang chạy |
-| Model không tìm thấy | Chạy `ollama pull llama3` |
-| LLM trả về lỗi / timeout | Tăng `timeout` trong `llm_gateway.py`, hoặc giảm `num_ctx` |
-| Docker không gọi được Ollama | Đảm bảo dùng `host.docker.internal` thay vì `localhost` |
-| SQL không hợp lệ (`valid: false`) | LLM sinh ra SQL sai cú pháp — thử lại hoặc điều chỉnh prompt |
+## Tests and checks
+
+```bash
+pytest -q
+git diff --check
+```
+
+The app has no committed secrets. Do not paste tokens into source, issues, logs, or deployment files. Rotate any credential exposed outside its provider console.

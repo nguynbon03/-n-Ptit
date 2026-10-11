@@ -5,6 +5,7 @@ pipeline.py — 7-step SQL question generation pipeline (plain Python, no cloud 
 import json
 import logging
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -21,7 +22,9 @@ from semantic_checker import check_semantic_consistency
 from schema_loader import generate_ddl, generate_seed, load_schema
 from taxonomy import get_difficulty_config, get_few_shot_example, get_topic_pool
 
-load_dotenv(override=True)
+load_dotenv(override=False)
+
+_BASE_DIR = Path(__file__).resolve().parent
 
 logger = logging.getLogger(__name__)
 
@@ -444,10 +447,12 @@ def _generate_one(
 def generate_pipeline(
     specs: list[str] = ["easy", "medium", "hard"],
     questions_per_spec: int = 1,
-    schema_path: str = "schema.json",
+    schema_path: str | None = None,
     excel_id: str | None = None,
-    excel_path: str = "Master_SQL_Dataset_All_Sources_2_1.xlsx",
+    excel_path: str | None = None,
 ) -> dict:
+    schema_path = schema_path or str(_BASE_DIR / "schema.json")
+    excel_path = excel_path or str(_BASE_DIR / "Master_SQL_Dataset_All_Sources_2_1.xlsx")
     llm = LLMGateway()
     bank = QuestionBank()
 

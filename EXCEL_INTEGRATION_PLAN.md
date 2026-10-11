@@ -88,9 +88,9 @@ Tac dung chinh:
 
 - Doc `.env`.
 - Ho tro 2 provider:
-  - `ollama`
+  - `anthropic`
   - `gemini`
-- Voi Ollama, goi endpoint `/api/generate`.
+- Voi Anthropic-compatible HTTP provider, goi endpoint `/api/generate`.
 - Voi Gemini, goi Google Generative AI SDK.
 
 Lien quan den Excel:
@@ -327,7 +327,7 @@ Tac dung chinh:
 - Map port `8000:8000`.
 - Mount `./Output:/app/Output`.
 - Mount `./data:/app/data`.
-- Cau hinh env cho Ollama/Gemini.
+- Cau hinh env cho Anthropic-compatible HTTP/Gemini.
 
 Lien quan den Excel:
 

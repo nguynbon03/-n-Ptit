@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import Optional, List
 import uuid
@@ -22,6 +23,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_STATIC_DIR = Path(__file__).parent / "static"
+
+
+@app.get("/", include_in_schema=False)
+def frontend():
+    return FileResponse(_STATIC_DIR / "index.html")
+
+
+@app.get("/static/{asset_path:path}", include_in_schema=False)
+def static_asset(asset_path: str):
+    asset = (_STATIC_DIR / asset_path).resolve()
+    if _STATIC_DIR not in asset.parents or not asset.is_file():
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return FileResponse(asset)
+
 
 # ---------------------------------------------------------------------------
 # In-memory task registry (single-process; đủ cho dev/demo scope)
