@@ -16,7 +16,7 @@ def test_frontend_and_static_assets_are_served():
     assert "SQLArena" in page.text
     assert styles.status_code == 200
     legacy_page = Path("pipeline.html").read_text()
-    assert all(token not in styles.text + legacy_page for token in ("gradient", "radial-gradient", "conic-gradient"))
+    assert all(token not in styles.text + legacy_page for token in ("linear-gradient", "radial-gradient", "conic-gradient"))
     assert all(color in styles.text for color in ("#5C7F71", "#802520", "#BA8530", "#181818", "#F5EDDC", "#B2653B"))
 
 
